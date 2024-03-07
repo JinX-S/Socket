@@ -46,8 +46,7 @@ int Start_Server_Socket() {
 // socket:创建socket，若成功，返回socket描述符 
 int Creat_Socket() {
   	server_socket_fd = socket(PF_INET, SOCK_STREAM, 0); 
-  	if(server_socket_fd < 0) 
-  	{ 
+  	if(server_socket_fd < 0) { 
     		perror("Create socket error:"); 
     		exit(1); 
   	} 
@@ -57,8 +56,7 @@ int Creat_Socket() {
 
 // bind:绑定客户端的socket和客户端的socket地址结构
 int Client_Server_Bind() {
-  	if(-1 == (bind(server_socket_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)))) 
-  	{ 
+  	if(-1 == (bind(server_socket_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)))) { 
     		perror("Server Bind Failed:"); 
     		exit(1); 
   	} 
