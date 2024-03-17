@@ -10,7 +10,7 @@
 #include <sys/select.h>
    
 #define SERVER_PORT 8080 // 端口
-#define LENGTH_OF_LISTEN_QUEUE 20 // 
+#define LENGTH_OF_LISTEN_QUEUE 1024 // 监听上限
 #define BUFFER_SIZE 1024
 #define FILE_NAME_MAX_SIZE 512 
 
@@ -45,8 +45,7 @@ int Start_Server_Socket()  // 声明并初始化一个服务器端的socket地�
 int Creat_Socket()  // 创建socket，若成功，返回socket描述符 
 {
   	server_socket_fd = socket(PF_INET, SOCK_STREAM, 0); 
-  	if(server_socket_fd < 0) 
-  	{ 
+  	if(server_socket_fd < 0) { 
     		perror("Create socket error:"); 
     		exit(1); 
   	} 
@@ -56,8 +55,7 @@ int Creat_Socket()  // 创建socket，若成功，返回socket描述符
 
 int Client_Server_Bind() // 绑定客户端的socket和客户端的socket地址结构
 {
-  	if(-1 == (bind(server_socket_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)))) 
-  	{ 
+  	if(-1 == (bind(server_socket_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)))) { 
     		perror("Server Bind Failed:"); 
     		exit(1); 
   	} 
@@ -66,8 +64,7 @@ int Client_Server_Bind() // 绑定客户端的socket和客户端的socket地址�
 
 int Serve_Listen() // 监听
 {
-  	if(-1 == (listen(server_socket_fd, LENGTH_OF_LISTEN_QUEUE))) 
-  	{ 
+  	if(-1 == (listen(server_socket_fd, LENGTH_OF_LISTEN_QUEUE))) { 
     		perror("Listen error:"); 
     		exit(1); 
   	}
@@ -96,7 +93,7 @@ int Send_File_Name()  // 接收需要发送的文件位置及文件名
    	// 然后从buffer(缓冲区)拷贝到file_name中 
     	bzero(file_name, FILE_NAME_MAX_SIZE+1); 
     	strncpy(file_name, buffer, strlen(buffer)>FILE_NAME_MAX_SIZE?FILE_NAME_MAX_SIZE:strlen(buffer)); 
-    	printf("The file name which you want to send：%s\n", file_name); 
+    	std::cout << "The file name which you want to send:" << file_name << std::endl; 
 	return 1;
 }
 
@@ -104,26 +101,21 @@ int Document_Send()	// 发送文件
 {
    	// 打开文件并读取文件数据 
     	fp = fopen(file_name, "r"); 
-    	if(fp == NULL) 
-    	{ 
-      		printf("File:%s Not Found\n", file_name); 
-    	} 
+    	if(fp == NULL) std::cout << "File:" << file_name << " Not Found\n"; 
     	else 
     	{ 
       		bzero(buffer, BUFFER_SIZE); 
 		// 每读取一段数据，便将其发送给客户端，循环直到文件读完为止 
-      		while((length = fread(buffer, sizeof(char), BUFFER_SIZE, fp)) > 0) 
-      		{ 
-        		if(send(new_server_socket_fd, buffer, length, 0) < 0) 
-        		{ 
-          			printf("Send File:%s Failed./n", file_name); 
+      		while((length = fread(buffer, sizeof(char), BUFFER_SIZE, fp)) > 0) { 
+        		if(send(new_server_socket_fd, buffer, length, 0) < 0) { 
+          			std::cout << "Send File:" << file_name << " Failed./n"; 
           			exit(0); 
         		} 
         		bzero(buffer, BUFFER_SIZE); 
       		} 
       		// 关闭文件 
       		fclose(fp); 
-      		printf("File:%s send success\n", file_name); 
+      		std::cout << "File:" << file_name << " send success" << std::endl; 
     	} 
 	return 1;
    
@@ -138,7 +130,7 @@ int Link_Trans()
 		for (int i = 0; i < fdsize; i++) FD_SET(fds[i], &rdset); // 将fds数组加入到等待队列
 		if (fdsize < 0 || fdsize > 1024) {
 			std::cout << "Too many clients!" << std::endl;
-			exit(0);
+			exit(1);
 		}
 		nready = select(fds[fdsize-1] + 1, &rdset, nullptr, nullptr, nullptr);// 使用select监听
 		if (nready == -1) {
@@ -159,7 +151,7 @@ int Link_Trans()
 					Send_File_Name();
 					if (rc == -1) {
 						std::cout << "recv error!" << std::endl;
-						exit(0);
+						exit(1);
 					} else if (rc == 0) { // 客户端断开连接
 						close(fds[i]);
 						std::cout << "client:" << fds[i] << "closed connection" << std::endl;
@@ -170,14 +162,11 @@ int Link_Trans()
 			}
 		}
 	}
-	close(server_socket_fd);
-
 	return 1;
 }
 
 
-int main(void) 
-{ 
+int main(void) { 
 	Start_Server_Socket();
 	Creat_Socket();
 	Client_Server_Bind();  
