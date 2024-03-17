@@ -5,9 +5,9 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <sys/socket.h>
-#include <sys/select.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
+#include <sys/select.h>
    
 #define SERVER_PORT 8080 // 端口
 #define LENGTH_OF_LISTEN_QUEUE 20 // 
@@ -29,9 +29,9 @@ char file_name[FILE_NAME_MAX_SIZE+1];
 
 FILE *fp;
 
-// select参数
-int ret, maxfd = 0, rc;
-fd_set rset, allset; // 定义读集合，备份集合allset
+fd_set rdset; // 读集合
+int nready = 0, fdsize = 0, rc;
+int fds[1024] = {0}; // 存放需要监听的fd数组
 
 int Start_Server_Socket()  // 声明并初始化一个服务器端的socket地址结构 
 {
@@ -96,7 +96,7 @@ int Send_File_Name()  // 接收需要发送的文件位置及文件名
    	// 然后从buffer(缓冲区)拷贝到file_name中 
     	bzero(file_name, FILE_NAME_MAX_SIZE+1); 
     	strncpy(file_name, buffer, strlen(buffer)>FILE_NAME_MAX_SIZE?FILE_NAME_MAX_SIZE:strlen(buffer)); 
-    	printf("The file name which you want to send:%s\n", file_name); 
+    	printf("The file name which you want to send：%s\n", file_name); 
 	return 1;
 }
 
@@ -131,45 +131,47 @@ int Document_Send()	// 发送文件
 
 int Link_Trans()
 {
-    int opt = 1;
-    setsockopt(server_socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    maxfd = server_socket_fd;   // 最大文件描述符
-    FD_ZERO(&allset); // 清空监听集合
-    FD_SET(server_socket_fd, &allset);  // 将待监听fd添加到监听集合中
-    while (true) {
-        rset = allset;  // 备份
-        ret = select(maxfd+1, &rset, nullptr, nullptr, nullptr);  // 使用select监听
-        if (ret < 0) {
-            std::cout << "select error. errno=" << errno 
-                << "errmsg:" << strerror(errno) << std::endl;
-            exit(0);
-        }
-        if (FD_ISSET(server_socket_fd,&rset)) { // listenfd满足监听的读事件
-            // clie_addr_len = sizeof(clie_addr);
-            // new_server_socket_fd = accept(server_socket_fd, (struct sockaddr*)&client_addr, &client_addr_length);// 建立链接-不会阻塞
-            Serve_Accept_Link();
-            FD_SET(new_server_socket_fd, &allset); // 将新产生的fd添加到监听集合中，监听数据的读事件
-            if (maxfd < new_server_socket_fd) maxfd = new_server_socket_fd; // 修改maxfd
-            if (ret == 1) continue;         // 说明select只返回一个，并且是listenfd
-        }
 
-        for (int i = server_socket_fd; i <= maxfd; ++i) { // 处理满足读事件的fd
-            if (FD_ISSET(i,&rset)) {    // 找到满足读事件的fd
-                // rc = recv(new_server_socket_fd, buffer, sizeof(buffer), 0);
-                Send_File_Name();
-                if (rc == 0) {  // 检测到客户端已关闭连接
-                    close(i);
-                    FD_CLR(i, &allset);
-                    continue;
-                } else if (rc == -1) {  // 将关闭的fd移除出监听集合
-                    std::cout << "recv error. errno=" << errno 
-                        << " errmsg:" << strerror(errno) << std::endl;
-                    continue;
-                }
-                Document_Send();
-            }
-        }
-    }
+	fds[fdsize++] = server_socket_fd; // 把lfd放入到fds数组的[0]位置
+	while (true) {
+		FD_ZERO(&rdset); // 将读集合清空
+		for (int i = 0; i < fdsize; i++) FD_SET(fds[i], &rdset); // 将fds数组加入到等待队列
+		if (fdsize < 0 || fdsize > 1024) {
+			std::cout << "Too many clients!" << std::endl;
+			exit(0);
+		}
+		nready = select(fds[fdsize-1] + 1, &rdset, nullptr, nullptr, nullptr);// 使用select监听
+		if (nready == -1) {
+			std::cout << "select error!" << strerror(errno) <<  std::endl;
+			for(int i = 1; i < fdsize ; ++i) close(fds[i]);
+			break;
+		} else if (nready == 0) continue;; // 超时
+
+		for (int i = 0; i < fdsize; i++) {
+			if (FD_ISSET(fds[i], &rdset)) {
+				if (fds[i] == server_socket_fd) { // 有新连接
+					Serve_Accept_Link();
+					if (fdsize >= 1024) {
+						std::cout << "已经达到最大检测数1024。" << std::endl;
+						continue;
+					} else fds[fdsize++] = new_server_socket_fd;
+				} else {
+					Send_File_Name();
+					if (rc == -1) {
+						std::cout << "recv error!" << std::endl;
+						exit(0);
+					} else if (rc == 0) { // 客户端断开连接
+						close(fds[i]);
+						std::cout << "client:" << fds[i] << "closed connection" << std::endl;
+						for(int j = i--; j < fdsize -1; ++j) fds[j] = fds[j + 1];
+						fds[--fdsize] = 0;
+					} else Document_Send();
+				}
+			}
+		}
+	}
+	close(server_socket_fd);
+
 	return 1;
 }
 
